@@ -1,13 +1,15 @@
 import uuid
 import subprocess
+import requests
+import io
 from pathlib import Path
 from typing import Optional
+from urllib.parse import quote
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
-from goblin import generate
 
 app = FastAPI(title="Viral 9:16 Generator")
 
@@ -24,20 +26,27 @@ WORK_DIR.mkdir(exist_ok=True)
 FRAMES_DIR = WORK_DIR / "frames"
 FRAMES_DIR.mkdir(exist_ok=True)
 
-
 @app.get("/")
 async def serve_index():
     return FileResponse("index.html")
 
-
-async def generate_single_image(prompt: str, output_path: Path, model: str = "goblin-flux"):
+def download_pollinations_image(prompt: str, output_path: Path, style: str = "flux"):
+    """Télécharge une image gratuite via Pollinations.ai"""
+    # On ajoute le style au prompt pour orienter la génération
+    full_prompt = f"{prompt}, {style} style, vertical 9:16, high quality"
+    encoded_prompt = quote(full_prompt)
+    url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1080&height=1920&nologo=true"
+    
     try:
-        await generate(prompt, model=model, output=str(output_path))
+        response = requests.get(url, timeout=60)
+        response.raise_for_status()
+        img = Image.open(io.BytesIO(response.content)).convert("RGB")
+        img = img.resize((1080, 1920), Image.LANCZOS)
+        img.save(output_path)
         return True
     except Exception as e:
-        print(f"[Goblin AI] Echec : {e}")
+        print(f"[Pollinations] Echec : {e}")
         return False
-
 
 def create_gif_from_frames(frame_paths, output_path: Path, fps: int = 8, width: int = 540, height: int = 960):
     if not frame_paths:
@@ -56,17 +65,13 @@ def create_gif_from_frames(frame_paths, output_path: Path, fps: int = 8, width: 
     filter_base = f"fps={fps},scale={width}:{height}:flags=lanczos"
 
     subprocess.run([
-        "ffmpeg", "-y",
-        "-f", "concat", "-safe", "0", "-i", str(concat_file),
-        "-vf", f"{filter_base},palettegen",
-        str(palette_path)
+        "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_file),
+        "-vf", f"{filter_base},palettegen", str(palette_path)
     ], check=True, capture_output=True)
 
     subprocess.run([
-        "ffmpeg", "-y",
-        "-f", "concat", "-safe", "0", "-i", str(concat_file),
-        "-i", str(palette_path),
-        "-lavfi", f"{filter_base} [x]; [x][1:v] paletteuse",
+        "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_file),
+        "-i", str(palette_path), "-lavfi", f"{filter_base} [x]; [x][1:v] paletteuse",
         str(output_path)
     ], check=True, capture_output=True)
 
@@ -74,34 +79,25 @@ def create_gif_from_frames(frame_paths, output_path: Path, fps: int = 8, width: 
     palette_path.unlink(missing_ok=True)
     return output_path
 
-
 @app.post("/generate/image")
 async def generate_image_endpoint(
     prompt: str = Form(...),
-    style: str = Form("goblin-flux"),
+    style: str = Form("flux"),
     reference_image: Optional[UploadFile] = File(None),
 ):
     task_id = uuid.uuid4().hex
     out_path = WORK_DIR / f"img_{task_id}.png"
 
-    if reference_image:
-        print("[Info] reference_image recue mais non utilisee par Goblin AI")
-
-    success = await generate_single_image(prompt, out_path, model=style)
+    success = download_pollinations_image(prompt, out_path, style=style)
     if not success:
         raise HTTPException(status_code=500, detail="Echec de la generation d'image")
 
-    img = Image.open(out_path).convert("RGB")
-    img = img.resize((1080, 1920), Image.LANCZOS)
-    img.save(out_path)
-
     return FileResponse(out_path, media_type="image/png", filename=f"viral_{task_id}.png")
-
 
 @app.post("/generate/gif")
 async def generate_gif_endpoint(
     prompt: str = Form(...),
-    style: str = Form("goblin-flux"),
+    style: str = Form("flux"),
     frame_count: int = Form(10),
 ):
     if frame_count < 5 or frame_count > 20:
@@ -120,13 +116,10 @@ async def generate_gif_endpoint(
 
     for i in range(frame_count):
         hint = motion_hints[i % len(motion_hints)]
-        frame_prompt = f"{prompt}, {hint}, frame {i+1}/{frame_count}, vertical 9:16 composition"
+        frame_prompt = f"{prompt}, {hint}, frame {i+1}/{frame_count}"
         fp = FRAMES_DIR / f"{task_id}_f{i:03d}.png"
-        success = await generate_single_image(frame_prompt, fp, model=style)
+        success = download_pollinations_image(frame_prompt, fp, style=style)
         if success:
-            img = Image.open(fp).convert("RGB")
-            img = img.resize((1080, 1920), Image.LANCZOS)
-            img.save(fp)
             frame_paths.append(fp)
 
     if len(frame_paths) < 3:
