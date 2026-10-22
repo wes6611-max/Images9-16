@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Générateur Viral 9:16</title>
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 640px; margin: 40px auto; padding: 0 16px; background: #0f0f0f; color: #eee; }
+        h1 { font-size: 1.4rem; }
+        label { display: block; margin-top: 16px; font-weight: 600; }
+        input, select, button { width: 100%; padding: 10px; margin-top: 6px; border-radius: 8px; border: 1px solid #333; background: #1a1a1a; color: #eee; box-sizing: border-box; }
+        button { background: #6c5ce7; border: none; font-weight: 700; cursor: pointer; margin-top: 20px; }
+        button:hover { background: #7d6ff0; }
+        #result { margin-top: 24px; text-align: center; }
+        #result img, #result video { max-width: 100%; border-radius: 12px; margin-top: 12px; }
+        .hint { font-size: 0.8rem; color: #888; margin-top: 4px; }
+        .error { color: #ff7675; }
+    </style>
+</head>
+<body>
+    <h1>🎬 Générateur Viral 9:16</h1>
+
+    <label>Prompt (description de l'image)</label>
+    <input id="prompt" placeholder="ex: un chat cyberpunk dans une ville néon" value="un chat cyberpunk dans une ville néon">
+
+    <label>Style / Modèle</label>
+    <select id="style">
+        <option value="goblin-flux">Flux (polyvalent)</option>
+        <option value="goblin-anime">Anime</option>
+        <option value="goblin-realistic">Réaliste</option>
+        <option value="goblin-cyberpunk">Cyberpunk</option>
+    </select>
+
+    <label>Photo personnelle (optionnel, pour référence future)</label>
+    <input type="file" id="reference" accept="image/*">
+    <p class="hint">⚠️ Goblin AI ne prend pas encore en charge l'image-to-image, ce fichier est envoyé mais ignoré pour l'instant.</p>
+
+    <button onclick="generateImage()">🖼️ Générer une image</button>
+    <button onclick="generateGif()">🎞️ Générer un GIF (10-15s)</button>
+
+    <div id="result"></div>
+
+    <script>
+        const API = '';
+
+        async function generateImage() {
+            const prompt = document.getElementById('prompt').value;
+            const style = document.getElementById('style').value;
+            const ref = document.getElementById('reference').files[0];
+            const form = new FormData();
+            form.append('prompt', prompt);
+            form.append('style', style);
+            if (ref) form.append('reference_image', ref);
+
+            document.getElementById('result').innerHTML = '<p>⏳ Génération en cours…</p>';
+
+            try {
+                const res = await fetch(`${API}/generate/image`, { method: 'POST', body: form });
+                if (!res.ok) throw new Error(await res.text());
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                document.getElementById('result').innerHTML = `<img src="${url}" alt="image générée">`;
+            } catch (e) {
+                document.getElementById('result').innerHTML = `<p class="error">Erreur : ${e.message}</p>`;
+            }
+        }
+
+        async function generateGif() {
+            const prompt = document.getElementById('prompt').value;
+            const style = document.getElementById('style').value;
+            const form = new FormData();
+            form.append('prompt', prompt);
+            form.append('style', style);
+            form.append('frame_count', '10');
+
+            document.getElementById('result').innerHTML = '<p>⏳ Génération du GIF en cours (peut prendre 1-2 min)…</p>';
+
+            try {
+                const res = await fetch(`${API}/generate/gif`, { method: 'POST', body: form });
+                if (!res.ok) throw new Error(await res.text());
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                document.getElementById('result').innerHTML = `<img src="${url}" alt="GIF généré">`;
+            } catch (e) {
+                document.getElementById('result').innerHTML = `<p class="error">Erreur : ${e.message}</p>`;
+            }
+        }
+    </script>
+</body>
+</html>
